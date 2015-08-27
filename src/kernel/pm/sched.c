@@ -63,6 +63,9 @@ PUBLIC void resume(struct process *proc)
  */
 PUBLIC void yield(void)
 {
+	int counterPriority = 0;
+	int counterPriority2 = 0;
+	
 	struct process *p;    /* Working process.     */
 	struct process *next; /* Next process to run. */
 
@@ -83,6 +86,7 @@ PUBLIC void yield(void)
 	}
 
 	/* Choose a process to run next. */
+	
 	next = IDLE;
 	for (p = FIRST_PROC; p <= LAST_PROC; p++)
 	{
@@ -94,18 +98,21 @@ PUBLIC void yield(void)
 		 * Process with higher
 		 * waiting time found.
 		 */
-		if (p->counter > next->counter)
+		
+		counterPriority = p->counter + p->priority + p->nice;
+		counterPriority2 = next->counter + next->priority + next->nice;
+		
+		if (counterPriority < counterPriority2)
 		{
-			next->counter++;
+			next->counter--;
 			next = p;
 		}
-			
-		/*
-		 * Increment waiting
-		 * time of process.
-		 */
 		else
-			p->counter++;
+		{
+			p->counter--;
+			continue;
+		}
+		
 	}
 	
 	/* Switch to next process. */
