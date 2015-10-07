@@ -1,5 +1,6 @@
 /*
- * Copyright(C) 2011-2014 Pedro H. Penna <pedrohenriquepenna@gmail.com>
+ * Copyright(C) 2011-2015 Pedro H. Penna   <pedrohenriquepenna@gmail.com>
+ *              2015-2015 Davidson Francis <davidsondfgl@hotmail.com>
  *
  * This file is part of Nanvix.
  *
@@ -135,6 +136,7 @@
     	void *kstack;                      /**< Kernel stack pointer.   */
     	void (*restorer)(void);            /**< Signal restorer.        */
 		sighandler_t handlers[NR_SIGNALS]; /**< Signal handlers.        */
+		unsigned irqlvl;                   /**< Current IRQ level.      */
 		/**@}*/
 		
     	/**
@@ -174,6 +176,7 @@
     	pid_t pid;              /**< Process ID.              */
     	struct process *pgrp;   /**< Process group ID.        */
     	struct process *father; /**< Father process.          */
+		char name[NAME_MAX];    /**< Process name.            */
 		/**@}*/
 
     	/**
@@ -269,6 +272,7 @@
 	EXTERN int shutting_down;
 	EXTERN struct process proctab[PROC_MAX];
 	EXTERN struct process *curr_proc;
+	EXTERN struct process *last_proc;
 	EXTERN pid_t next_pid;
 	EXTERN unsigned nprocs;
 

@@ -93,11 +93,12 @@ found:
 	}
 	
 	/* Initialize process. */
-	proc->intlvl = curr_proc->intlvl;
+	proc->intlvl = INT_LVL_5;
 	proc->received = 0;
 	proc->restorer = curr_proc->restorer;
 	for (i = 0; i < NR_SIGNALS; i++)
 		proc->handlers[i] = curr_proc->handlers[i];
+	proc->irqlvl = curr_proc->irqlvl;
 	proc->size = curr_proc->size;
 	proc->pwd = curr_proc->pwd;
 	proc->pwd->count++;
@@ -125,6 +126,7 @@ found:
 	proc->pid = next_pid++;
 	proc->pgrp = curr_proc->pgrp;
 	proc->father = curr_proc;
+	kstrncpy(proc->name, curr_proc->name, NAME_MAX);
 	proc->utime = 0;
 	proc->ktime = 0;
 	proc->cutime = 0;

@@ -1,5 +1,6 @@
 /*
- * Copyright(C) 2011-2014 Pedro H. Penna <pedrohenriquepenna@gmail.com>
+ * Copyright(C) 2011-2015 Pedro H. Penna   <pedrohenriquepenna@gmail.com>
+ *              2015-2015 Davidson Francis <davidsondfgl@hotmail.com>
  *
  * This file is part of Nanvix.
  *
@@ -25,6 +26,7 @@
 #include <nanvix/hal.h>
 #include <nanvix/mm.h>
 #include <nanvix/pm.h>
+#include <nanvix/klib.h>
 #include <sys/stat.h>
 #include <signal.h>
 #include <limits.h>
@@ -48,6 +50,11 @@ PUBLIC struct process proctab[PROC_MAX];
  * @brief Current running process. 
  */
 PUBLIC struct process *curr_proc = IDLE;
+
+/**
+ * @brief Last running process. 
+ */
+PUBLIC struct process *last_proc = IDLE;
 
 /**
  * @brief Next available process ID.
@@ -80,6 +87,7 @@ PUBLIC void pm_init(void)
 	IDLE->restorer = NULL;
 	for (i = 0; i < NR_SIGNALS; i++)
 		IDLE->handlers[i] = SIG_DFL;
+	IDLE->irqlvl = INT_LVL_5;
 	IDLE->pgdir = idle_pgdir;
 	for (i = 0; i < NR_PREGIONS; i++)
 		IDLE->pregs[i].reg = NULL;
@@ -100,6 +108,7 @@ PUBLIC void pm_init(void)
 	IDLE->pid = next_pid++;
 	IDLE->pgrp = IDLE;
 	IDLE->father = NULL;
+	kstrncpy(IDLE->name, "idle", NAME_MAX);
 	IDLE->utime = 0;
 	IDLE->ktime = 0;
 	IDLE->cutime = 0;

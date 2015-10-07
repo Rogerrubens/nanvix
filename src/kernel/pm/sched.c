@@ -1,5 +1,6 @@
 /*
- * Copyright(C) 2011-2014 Pedro H. Penna <pedrohenriquepenna@gmail.com>
+ * Copyright(C) 2011-2015 Pedro H. Penna   <pedrohenriquepenna@gmail.com>
+ *              2015-2015 Davidson Francis <davidsondfgl@hotmail.com>
  *
  * This file is part of Nanvix.
  *
@@ -73,6 +74,9 @@ PUBLIC void yield(void)
 	if (curr_proc->state == PROC_RUNNING)
 		sched(curr_proc);
 
+	/* Remember this process. */
+	last_proc = curr_proc;
+
 	/* Check alarm. */
 	for (p = FIRST_PROC; p <= LAST_PROC; p++)
 	{
@@ -116,6 +120,7 @@ PUBLIC void yield(void)
 	}
 	
 	/* Switch to next process. */
+	next->priority = PRIO_USER;
 	next->state = PROC_RUNNING;
 	next->counter = PROC_QUANTUM;
 	switch_to(next);

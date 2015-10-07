@@ -23,6 +23,49 @@
 #include <nanvix/klib.h>
 #include <nanvix/mm.h>
 
+/*
+ * Bad KPOOL_PHYS ?
+ */
+#if ((KBASE_PHYS + KMEM_SIZE) != KPOOL_PHYS)
+	#error "bad KPOOL_PHYS"
+#endif
+
+/*
+ * Bad UBASE_PHYS ?
+ */
+#if ((KBASE_PHYS + KMEM_SIZE + KPOOL_SIZE) != UBASE_PHYS)
+	#error "bad UBASE_PHYS"
+#endif
+
+/*
+ * Bad KPOOL_VIRT ?
+ */
+#if ((KBASE_VIRT + KMEM_SIZE) != KPOOL_VIRT)
+	#error "bad KPOOL_VIRT"
+#endif
+
+/*
+ * Bad INITRD_VIRT ?
+ */
+#if ((KBASE_VIRT + KMEM_SIZE + KPOOL_SIZE) != INITRD_VIRT)
+	#error "bad INITRD_VIRT"
+#endif
+
+/*
+ * Bad UBASE_VIRT ?
+ */
+#if ((UBASE_VIRT < (KMEM_SIZE + KPOOL_SIZE)))
+	#error "bad UBASE_VIRT"
+#endif
+
+/*
+ * Bad identity mapping?
+ */
+#if (((KPOOL_VIRT   - KBASE_VIRT) != KPOOL_PHYS) || \
+    ((BUFFERS_VIRT - KBASE_VIRT) != BUFFERS_PHYS))
+	#error "bad identity mapping"
+#endif
+
 /**
  * @brief Initializes the memory system.
  */

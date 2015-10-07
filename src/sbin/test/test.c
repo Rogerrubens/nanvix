@@ -17,10 +17,13 @@
  * along with Nanvix. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <assert.h>
 #include <nanvix/config.h>
 #include <sys/times.h>
 #include <sys/wait.h>
+#include <sys/sem.h>
 #include <stdio.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
@@ -170,20 +173,91 @@ static int io_test(void)
  *============================================================================*/
 
 /**
- * @brief Scheduling testing module.
+ * @brief Performs some dummy CPU-intensive computation.
+ */
+static void work_cpu(void)
+{
+	int c;
+	
+	c = 0;
+		
+	/* Perform some computation. */
+	for (int i = 0; i < 4096; i++)
+	{
+		int a = 1 + i;
+		for (int b = 2; b < i; b++)
+		{
+			if ((i%b) == 0)
+				a += b;
+		}
+		c += a;
+	}
+}
+
+/**
+ * @brief Performs some dummy IO-intensive computation.
+ */
+static void work_io(void)
+{
+	int fd;            /* File descriptor. */
+	char buffer[2048]; /* Buffer.          */
+	
+	/* Open hdd. */
+	fd = open("/dev/hdd", O_RDONLY);
+	if (fd < 0)
+		_exit(EXIT_FAILURE);
+	
+	/* Read data. */
+	for (size_t i = 0; i < MEMORY_SIZE; i += sizeof(buffer))
+	{
+		if (read(fd, buffer, sizeof(buffer)) < 0)
+			_exit(EXIT_FAILURE);
+	}
+	
+	/* House keeping. */
+	close(fd);
+}
+
+/**
+ * @brief Scheduling test 0.
+ * 
+ * @details Spawns two processes and tests wait() system call.
+ * 
+ * @return Zero if passed on test, and non-zero otherwise.
+ */
+static int sched_test0(void)
+{
+	pid_t pid;
+	
+	pid = fork();
+	
+	/* Failed to fork(). */
+	if (pid < 0)
+		return (-1);
+	
+	/* Child process. */
+	else if (pid == 0)
+	{
+		work_cpu();
+		_exit(EXIT_SUCCESS);
+	}
+	
+	wait(NULL);
+	
+	return (0);
+}
+
+/**
+ * @brief Scheduling test 1.
  * 
  * @details Forces the priority inversion problem, to check how well the system
  *          performs on dynamic priorities.
  * 
  * @returns Zero if passed on test, and non-zero otherwise.
  */
-static int sched_test(void)
+static int sched_test1(void)
 {
-	pid_t pid;         /* Child process ID.   */
-	struct tms timing; /* Timing information. */
-	clock_t t0, t1;    /* Elapsed times.      */
-	
-	t0 = times(&timing);
+	pid_t pid;
 		
 	pid = fork();
 	
@@ -194,60 +268,199 @@ static int sched_test(void)
 	/* Parent process. */
 	else if (pid > 0)
 	{
-		int c;
-		
-		nice(0);
-		
-		/* Perform some computation. */
-		c = 0;
-		for (int i = 0; i < 1024; i++)
-		{
-			int a = 1 + i;
-			for (int b = 2; b < i; b++)
-			{
-				if ((i%b) == 0)
-					a += b;
-			}
-			c += a;
-		}
+		nice(-2*NZERO);
+		work_cpu();
 	}
 	
 	/* Child process. */
 	else
 	{
-		int fd;       /* File descriptor. */
-		char *buffer; /* Buffer.          */
-		
 		nice(2*NZERO);
-		
-		/* Allocate buffer. */
-		buffer = malloc(MEMORY_SIZE);
-		if (buffer == NULL)
-			exit(EXIT_FAILURE);
-		
-		/* Open hdd. */
-		fd = open("/dev/hdd", O_RDONLY);
-		if (fd < 0)
-			exit(EXIT_FAILURE);
-		
-		/* Read hdd. */
-		if (read(fd, buffer, MEMORY_SIZE) != MEMORY_SIZE)
-			exit(EXIT_FAILURE);
-		
-		/* House keeping. */
-		free(buffer);
-		close(fd);
-		
-		exit(EXIT_SUCCESS);
+		work_io();
+		_exit(EXIT_SUCCESS);
 	}
 		
 	wait(NULL);
 	
-	t1 = times(&timing);
+	return (0);
+}
+
+/**
+ * @brief Scheduling test 1.
+ * 
+ * @details Spawns several processes and stresses the scheduler.
+ * 
+ * @returns Zero if passed on test, and non-zero otherwise.
+ */
+static int sched_test2(void)
+{
+	pid_t pid[4];
 	
-	/* Print timing statistics. */
-	if (flags & VERBOSE)
-		printf("  Elapsed: %d\n", t1 - t0);
+	for (int i = 0; i < 4; i++)
+	{
+		pid[i] = fork();
+	
+		/* Failed to fork(). */
+		if (pid[i] < 0)
+			return (-1);
+		
+		/* Child process. */
+		else if (pid[i] == 0)
+		{
+			if (i & 1)
+			{
+				nice(2*NZERO);
+				work_cpu();
+				_exit(EXIT_SUCCESS);
+			}
+			
+			else
+			{	
+				nice(-2*NZERO);
+				pause();
+				_exit(EXIT_SUCCESS);
+			}
+		}
+	}
+	
+	for (int i = 0; i < 4; i++)
+	{
+		if (i & 1)
+			wait(NULL);
+			
+		else
+		{	
+			kill(pid[i], SIGCONT);
+			wait(NULL);
+		}
+	}
+	
+	return (0);
+}
+
+/*============================================================================*
+ *                             Semaphores Test                                *
+ *============================================================================*/
+
+/**
+ * @brief Creates a semaphore.
+ */
+#define SEM_CREATE(a, b) (assert(((a) = semget(b)) >= 0))
+
+/**
+ * @brief Initializes a semaphore.
+ */
+#define SEM_INIT(a, b) (assert(semctl((a), SETVAL, (b)) == 0))
+
+/**
+ * @brief Destroys a semaphore.
+ */
+#define SEM_DESTROY(x) (assert(semctl((x), IPC_RMID, 0) == 0))
+
+/**
+ * @brief Ups a semaphore.
+ */
+#define SEM_UP(x) (assert(semop((x), 1) == 0))
+
+/**
+ * @brief Downs a semaphore.
+ */
+#define SEM_DOWN(x) (assert(semop((x), -1) == 0))
+
+/**
+ * @brief Puts an item in a buffer.
+ */
+#define PUT_ITEM(a, b)                                \
+{                                                     \
+	assert(lseek((a), 0, SEEK_SET) != -1);            \
+	assert(write((a), &(b), sizeof(b)) == sizeof(b)); \
+}                                                     \
+
+/**
+ * @brief Gets an item from a buffer.
+ */
+#define GET_ITEM(a, b)                               \
+{                                                    \
+	assert(lseek((a), 0, SEEK_SET) != -1);           \
+	assert(read((a), &(b), sizeof(b)) == sizeof(b)); \
+}                                                    \
+
+/**
+ * @brief Producer-Consumer problem with semaphores.
+ * 
+ * @details Reproduces consumer-producer scenario using semaphores.
+ * 
+ * @returns Zero if passed on test, and non-zero otherwise.
+ */
+int semaphore_test3(void)
+{
+	pid_t pid;                  /* Process ID.              */
+	int buffer_fd;              /* Buffer file descriptor.  */
+	int empty;                  /* Empty positions.         */
+	int full;                   /* Full positions.          */
+	int mutex;                  /* Mutex.                   */
+	const int BUFFER_SIZE = 32; /* Buffer size.             */
+	const int NR_ITEMS = 512;   /* Number of items to send. */
+	
+	/* Create buffer.*/
+	buffer_fd = open("buffer", O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+	if (buffer_fd < 0)
+		return (-1);
+	
+	/* Create semaphores. */
+	SEM_CREATE(mutex, 1);
+	SEM_CREATE(empty, 2);
+	SEM_CREATE(full, 3);
+		
+	/* Initialize semaphores. */
+	SEM_INIT(full, 0);
+	SEM_INIT(empty, BUFFER_SIZE);
+	SEM_INIT(mutex, 1);
+	
+	if ((pid = fork()) < 0)
+		return (-1);
+	
+	/* Producer. */
+	else if (pid == 0)
+	{
+		for (int item = 0; item < NR_ITEMS; item++)
+		{
+			SEM_DOWN(empty);
+			SEM_DOWN(mutex);
+			
+			PUT_ITEM(buffer_fd, item);
+				
+			SEM_UP(mutex);
+			SEM_UP(full);
+		}
+
+		_exit(EXIT_SUCCESS);
+	}
+	
+	/* Consumer. */
+	else
+	{
+		int item;
+		
+		do
+		{
+			SEM_DOWN(full);
+			SEM_DOWN(mutex);
+			
+			GET_ITEM(buffer_fd, item);
+				
+			SEM_UP(mutex);
+			SEM_UP(empty);
+		} while (item != (NR_ITEMS - 1));
+	}
+					
+	/* Destroy semaphores. */
+	SEM_DESTROY(mutex);
+	SEM_DESTROY(empty);
+	SEM_DESTROY(full);
+	
+	close(buffer_fd);
+	unlink("buffer");
 	
 	return (0);
 }
@@ -266,9 +479,10 @@ static void usage(void)
 	printf("Usage: test [options]\n\n");
 	printf("Brief: Performs regression tests on Nanvix.\n\n");
 	printf("Options:\n");
-	printf("  io    I/O test\n");
-	printf("  swp   Swapping test\n");
-	printf("  sched Scheduling test\n");
+	printf("  io    I/O Test\n");
+	printf("  ipc   Interprocess Communication Test\n");
+	printf("  swp   Swapping Test\n");
+	printf("  sched Scheduling Test\n");
 	
 	exit(EXIT_SUCCESS);
 }
@@ -288,21 +502,36 @@ int main(int argc, char **argv)
 		if (!strcmp(argv[i], "io"))
 		{
 			printf("I/O Test\n");
-			printf("  Result:  [%s]\n", (!io_test()) ? "PASSED" : "FAILED");
+			printf("  Result:             [%s]\n", 
+				(!io_test()) ? "PASSED" : "FAILED");
 		}
 		
 		/* Swapping test. */
 		else if (!strcmp(argv[i], "swp"))
 		{
 			printf("Swapping Test\n");
-			printf("  Result:  [%s]\n", (!swap_test()) ? "PASSED" : "FAILED");
+			printf("  Result:             [%s]\n",
+				(!swap_test()) ? "PASSED" : "FAILED");
 		}
 		
 		/* Scheduling test. */
 		else if (!strcmp(argv[i], "sched"))
 		{
-			printf("Scheduling Test\n");
-			printf("  Result:  [%s]\n", (!sched_test()) ? "PASSED" : "FAILED");
+			printf("Scheduling Tests\n");
+			printf("  waiting for child  [%s]\n",
+				(!sched_test0()) ? "PASSED" : "FAILED");
+			printf("  dynamic priorities [%s]\n",
+				(!sched_test1()) ? "PASSED" : "FAILED");
+			printf("  scheduler stress   [%s]\n",
+				(!sched_test2()) ? "PASSED" : "FAILED");
+		}
+		
+		/* IPC test. */
+		else if (!strcmp(argv[i], "ipc"))
+		{
+			printf("Interprocess Communication Tests\n");
+			printf("  producer consumer [%s]\n",
+				(!semaphore_test3()) ? "PASSED" : "FAILED");
 		}
 	
 		/* Wrong usage. */

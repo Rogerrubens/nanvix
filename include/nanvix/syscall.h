@@ -1,7 +1,21 @@
 /*
- * Copyright (C) 2011-2013 Pedro H. Penna <pedrohenriquepenna@gmail.com>
- * 
- * syscall.h - System call library.
+ * Copyright(C) 2011-2015 Pedro H. Penna   <pedrohenriquepenna@gmail.com>
+ *              2015-2015 Davidson Francis <davidsondfgl@hotmail.com>
+ *
+ * This file is part of Nanvix.
+ *
+ * Nanvix is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Nanvix is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Nanvix. If not, see <http://www.gnu.org/licenses/>.
  */
 
 #ifndef NANVIX_SYSCALL_H_
@@ -17,7 +31,7 @@
 	#include <utime.h>
 	
 	/* Number of system calls. */
-	#define NR_SYSCALLS 46
+	#define NR_SYSCALLS 48
 	
 	/* System call numbers. */
 	#define NR_alarm     0
@@ -66,6 +80,11 @@
 	#define NR_ustat    43
 	#define NR_times    44
 	#define NR_shutdown 45
+ 	#define NR_ps       46
+ 	#define NR_gticks   47
+ 	#define NR_semget   48
+ 	#define NR_semctl   49
+ 	#define NR_semop    50
 
 #ifndef _ASM_FILE_
 
@@ -229,6 +248,21 @@
 	EXTERN ssize_t sys_write(int fd, const void *buf, size_t n);
 	
 	EXTERN int sys_shutdown(void);
+
+	/*
+	 * Gets process information
+	 */
+	EXTERN int sys_ps(void);
+
+	/*
+	 * Clear the screen
+	 */
+	EXTERN int sys_clear(void);
+
+	/*
+	 * Get system ticks since initialization
+	 */
+	EXTERN int sys_gticks(void);
 
 #endif /* _ASM_FILE_ */
 

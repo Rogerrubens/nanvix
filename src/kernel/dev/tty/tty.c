@@ -1,5 +1,6 @@
 /*
- * Copyright(C) 2011-2014 Pedro H. Penna <pedrohenriquepenna@gmail.com>
+ * Copyright(C) 2011-2015 Pedro H. Penna <pedrohenriquepenna@gmail.com>
+ *              2015-2015 Davidson Francis <davidsondfgl@gmail.com>
  * 
  * This file is part of Nanvix.
  * 
@@ -27,6 +28,7 @@
 #include <nanvix/syscall.h>
 #include <errno.h>
 #include <termios.h>
+#include <stropts.h>
 #include "tty.h"
 
 /**
@@ -38,23 +40,6 @@ PRIVATE struct tty tty;
  * @brief Currently active TTY device.
  */
 PRIVATE struct tty *active = &tty;
-
-/**
- * @name Control Characters
- */
-/**@{*/
-#define INTR_CHAR(tty) ((tty).term.c_cc[VINTR])
-#define STOP_CHAR(tty) ((tty).term.c_cc[VSTOP])
-#define SUSP_CHAR(tty) ((tty).term.c_cc[VSUSP])
-#define START_CHAR(tty) ((tty).term.c_cc[VSTART])
-#define QUIT_CHAR(tty) ((tty).term.c_cc[VQUIT])
-#define ERASE_CHAR(tty) ((tty).term.c_cc[VERASE])
-#define KILL_CHAR(tty) ((tty).term.c_cc[VKILL])
-#define EOL_CHAR(tty) ((tty).term.c_cc[VEOL])
-#define EOF_CHAR(tty) ((tty).term.c_cc[VEOF])
-#define MIN_CHAR(tty) ((tty).term.c_cc[VMIN])
-#define TIME_CHAR(tty) ((tty).term.c_cc[VTIME])
-/**@}*/
 
 /**
  * @brief Sends a signal to process group.
@@ -98,10 +83,10 @@ PUBLIC void tty_int(unsigned char ch)
 			 * Let these characters be handled
 			 * when the line is being parsed.
 			 */
-			if ((ch == ERASE_CHAR(*active)) ||
-				(ch == KILL_CHAR(*active)) ||
-				(ch == EOL_CHAR(*active)) ||
-				(ch == EOF_CHAR(*active)))
+			if ((ch == ERASE_CHAR(active->term)) ||
+				(ch == KILL_CHAR(active->term)) ||
+				(ch == EOL_CHAR(active->term)) ||
+				(ch == EOF_CHAR(active->term)))
 				goto out1;
 		}
 		
@@ -129,21 +114,21 @@ PUBLIC void tty_int(unsigned char ch)
 		 * Interrupt. Send signal to all
 		 * process in the same group.
 		 */
-		if (ch == INTR_CHAR(*active))
+		if (ch == INTR_CHAR(active->term))
 		{
 			tty_signal(SIGINT);
 			goto out0;
 		}
 		
 		/* Stop. */
-		else if (ch == STOP_CHAR(*active))
+		else if (ch == STOP_CHAR(active->term))
 		{
 			active->flags |= TTY_STOPPED;
 			return;
 		}
 				
 		/* Start. */
-		else if (ch == START_CHAR(*active))
+		else if (ch == START_CHAR(active->term))
 		{
 			active->flags &= ~TTY_STOPPED;
 			wakeup(&active->output.chain);
@@ -151,14 +136,14 @@ PUBLIC void tty_int(unsigned char ch)
 		}
 		
 		/* Suspend. */
-		else if (ch == SUSP_CHAR(*active))
+		else if (ch == SUSP_CHAR(active->term))
 		{
 			tty_signal(SIGTSTP);
 			goto out0;
 		}
 		
 		/* Quit. */
-		else if (ch == QUIT_CHAR(*active))
+		else if (ch == QUIT_CHAR(active->term))
 		{
 			tty_signal(SIGQUIT);
 			goto out0;
@@ -317,7 +302,7 @@ PRIVATE ssize_t tty_read(unsigned minor, char *buf, size_t n)
 			KBUFFER_GET(tty.rinput, ch);
 			
 			/* Erase. */
-			if (ch == ERASE_CHAR(tty))
+			if (ch == ERASE_CHAR(tty.term))
 			{
 				if (!KBUFFER_EMPTY(tty.cinput))
 				{
@@ -327,7 +312,7 @@ PRIVATE ssize_t tty_read(unsigned minor, char *buf, size_t n)
 			}
 			
 			/* Kill. */
-			else if (ch == KILL_CHAR(tty))
+			else if (ch == KILL_CHAR(tty.term))
 			{
 				while (!KBUFFER_EMPTY(tty.cinput))
 				{
@@ -337,19 +322,16 @@ PRIVATE ssize_t tty_read(unsigned minor, char *buf, size_t n)
 					console_put('\b', WHITE);
 				}
 			}
-			
-			/* End of line. */
-			else if (ch == EOL_CHAR(tty))
-			{
-				console_put('\n', WHITE);
-				continue;
-			}
-			
+
 			else
 			{
 				/* End of file. */
-				if (ch == EOF_CHAR(tty))
+				if (ch == EOF_CHAR(tty.term))
 					ch = '\0';
+				
+				/* End of line. */
+				else if (ch == EOL_CHAR(tty.term))
+					console_put(ch = '\n', WHITE);
 			
 				KBUFFER_PUT(tty.cinput, ch);
 			
@@ -379,10 +361,10 @@ PRIVATE ssize_t tty_read(unsigned minor, char *buf, size_t n)
 		/* Non canonical mode. */
 		else
 		{
-			if (MIN_CHAR(tty) > 0)
+			if (MIN_CHAR(tty.term) > 0)
 			{
 				/* Case A: MIN>0, TIME>0 */
-				if (TIME_CHAR(tty) > 0)
+				if (TIME_CHAR(tty.term) > 0)
 				{
 					kprintf("tty: MIN>0, TIME>0");
 					goto out;
@@ -399,10 +381,9 @@ PRIVATE ssize_t tty_read(unsigned minor, char *buf, size_t n)
 					}
 					
 					/* Copy data from input buffer. */
-					while ((i > 0) && (!KBUFFER_EMPTY(tty.cinput)))
+					while ((i > 0) && (!KBUFFER_EMPTY(tty.rinput)))
 					{
 						KBUFFER_GET(tty.rinput, ch);
-						
 						i--;
 						*p++ = ch;
 					}
@@ -412,7 +393,7 @@ PRIVATE ssize_t tty_read(unsigned minor, char *buf, size_t n)
 			else
 			{
 				/* Case C: MIN=0, TIME>0 */
-				if (TIME_CHAR(tty) > 0)
+				if (TIME_CHAR(tty.term) > 0)
 				{
 					kprintf("tty: MIN=0, TIME>0");
 					goto out;
@@ -422,7 +403,7 @@ PRIVATE ssize_t tty_read(unsigned minor, char *buf, size_t n)
 				else
 				{
 					/* Done reading. */
-					if (KBUFFER_EMPTY(tty.cinput))
+					if (KBUFFER_EMPTY(tty.rinput))
 						goto out;
 					
 					KBUFFER_GET(tty.rinput, ch);
@@ -475,6 +456,38 @@ PRIVATE int tty_gets(struct tty *tty, struct termios *termiosp)
 }
 
 /*
+ * Sets tty settings
+ */
+PRIVATE int tty_sets(struct tty *tty, int options, struct termios *termiosp)
+{
+	int ret;
+	
+	ret = 0;
+
+	/* Invalid termios pointer. */	
+	if (!chkmem(termiosp, sizeof(struct termios), MAY_READ))
+		return (-EINVAL);
+
+	/*
+	 * For now, only TCSANOW is supported.
+	 */
+	switch (options)
+	{
+		/* The change occurs immediately. */
+		case TCSANOW:
+			kmemcpy(&tty->term, termiosp, sizeof(struct termios));
+			break;
+
+		/* Invalid operation. */
+		default:
+			ret = -EINVAL;
+			break;
+	}
+
+	return (ret);
+}
+
+/*
  * Cleans the console.
  */
 PRIVATE int tty_clear(struct tty *tty)
@@ -494,15 +507,20 @@ PRIVATE int tty_ioctl(unsigned minor, unsigned cmd, unsigned arg)
 	UNUSED(minor);
 	
 	/* Parse command. */
-	switch (cmd)
+	switch (IOCTL_MAJOR(cmd))
 	{
 		/* Get tty settings. */
-		case TTY_GETS:
+		case IOCTL_MAJOR(TTY_GETS):
 			ret = tty_gets(&tty, (struct termios *)arg);
+			break;
+
+		/* Set tty settings */
+		case IOCTL_MAJOR(TTY_SETS):
+			ret = tty_sets(&tty, IOCTL_MINOR(cmd), (struct termios *)arg);
 			break;
 		
 		/* Clear console. */
-		case TTY_CLEAR:
+		case IOCTL_MAJOR(TTY_CLEAR):
 			ret = tty_clear(&tty);
 			break;
 		
@@ -551,7 +569,7 @@ PRIVATE struct cdev tty_driver = {
  */
 PRIVATE tcflag_t init_c_cc[NCCS] = {
 	'd' - 96,  /**< EOF character.   */
-	'\n' + 96, /**< EOL character.   */
+	'\n',      /**< EOL character.   */
 	'\b',      /**< ERASE character. */
 	'c' - 96,  /**< INTR character.  */
 	'u' - 96,  /**< KILL character.  */

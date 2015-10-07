@@ -1,8 +1,23 @@
 /*
- * Copyright(C) 2011-2014 Pedro H. Penna <pedrohenriquepenna@gmail.com>
- *
- * tsh - Tiny UNIX Shell.
+ * Copyright(C) 2011-2015 Pedro H. Penna <pedrohenriquepenna@gmail.com>
+ *              2015-2015 Davidson Francis <davidsondfgl@gmail.com>
+ * 
+ * This file is part of Nanvix.
+ * 
+ * Nanvix is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * Nanvix is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with Nanvix. If not, see <http://www.gnu.org/licenses/>.
  */
+
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -15,8 +30,17 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <termios.h>
+#include <ctype.h>
 #include "builtin.h"
 #include "tsh.h"
+
+/* Cursor keys. */
+#define KUP    0x97
+#define KDOWN  0x98
+
+/* Command stack. */
+#define STACK_SIZE  16
 
 /* Shell flags. */
 int shflags = 0;
@@ -26,6 +50,71 @@ int shret = EXIT_SUCCESS;
 
 /* Input file. */
 FILE *input = NULL;
+
+/* TTY modes */
+struct termios canonical;
+struct termios raw;
+
+/* Command stack */
+char stack[STACK_SIZE][LINELEN];
+int  stackp;
+int  stack_count;
+
+/*
+ * Switches to canonical (default) mode.
+ */
+static void switch_canonical(void)
+{
+	if (tcsetattr(fileno(stdin), TCSANOW, &canonical) < 0)
+	{
+		fprintf(stderr, "%s: failed to switch to canonical mode\n", TSH_NAME);
+		exit(EXIT_FAILURE);
+	}
+}
+
+/*
+ * Switches to raw mode
+ */
+static void switch_raw(void)
+{
+	if (tcsetattr(fileno(stdin), TCSANOW, &raw) < 0)
+	{
+		fprintf(stderr, "%s: failed to switch to raw mode\n", TSH_NAME);
+		exit(EXIT_FAILURE);
+	}
+}
+
+/*
+ * Configures raw mode.
+ */
+static void configure_tty(void)
+{
+	/* Get current termios */
+	if (tcgetattr(fileno(stdin), &canonical) < 0)
+	{
+		fprintf(stderr, "%s: failed to get tty options\n", TSH_NAME);
+		exit(EXIT_FAILURE);
+	}
+
+	/* Configure raw mode. */
+	memcpy(&raw, &canonical, sizeof(struct termios));
+	raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+	raw.c_cc[VMIN] = 1;
+	raw.c_cc[VTIME] = 0;
+
+	switch_raw();
+}
+
+/*
+ * Initializes the command stack.
+ */
+static void initialize_stack(void)
+{
+	for (int i = 0; i < STACK_SIZE; i++)
+		stack[i][0] = '\0';
+	stackp = -1;
+	stack_count = 0;
+}
 
 /*
  * Prints a syntax error message.
@@ -500,27 +589,139 @@ static void pline(char *line)
 }
 
 /*
+ * Cheks if a string has at least one graph character.
+ */
+static int has_graph(const char *str)
+{
+	for (/* noop */; *str != '\0'; str++)
+	{
+		if (isgraph(*str))
+				return (1);
+	}
+	
+	return (0);
+}
+
+/*
  * Reads a command line.
  */
 static int readline(char *line, int length, FILE *stream)
 {
-	line = fgets(line, length, stream);		
-		
-	/* Error while reading? */
-	if (line  == NULL)
+	int fd;       /* File descriptor associated with the stream. */
+	int size;     /* Number of characters left in the buffer.    */
+	int pointer;
+	int counter;
+	char *p;      /* Write pointer.                              */
+
+	fd = fileno(stream);
+	size = length;
+	p =  line;
+
+	pointer = ((stackp + 1)&(STACK_SIZE - 1));
+	counter = 0;
+
+	while (size > 0)
 	{
-		/* End of file reached. */
-		if (feof(stream))
-			return (0);
-			
-		clearerr(stream);
-		shret = errno;
-		return (-1);
-	}
+		unsigned char ch;
 	
-	/* Remove trailing newline. */
-	if ((line = strchr(line, '\n')) != NULL)
-		*line = '\0';
+		/* Nothing read. */
+		if (read(fd, &ch, 1) != 1)
+			return (-1);
+
+		/* Erase. */
+		if ((ch == ERASE_CHAR(raw)) && (size < length))
+		{
+			*p-- = '\0';
+			size++;
+			putchar(ch);
+		}
+
+		/* Kill. */
+		else if (ch == KILL_CHAR(raw))
+		{
+			/* Clear buffer. */
+			while (size < length)
+				putchar('\b'), size++;
+			p = line;
+		}
+
+		/* End of file. */
+		else if (ch == EOF_CHAR(raw))
+			return (0);
+
+		/* UP and DOWN. */
+		else if (ch == KUP || ch == KDOWN)
+		{
+			if(ch == KUP)
+			{
+				/* Prevents go up in empty positions. */
+				int min = (stack_count < STACK_SIZE) ? stack_count : STACK_SIZE;
+
+				if (counter < min)
+				{
+					pointer = ((pointer - 1) & (STACK_SIZE - 1));
+					counter++;
+				}
+			}
+			
+			else
+			{
+				/* Avoid from getting the same start command. */
+				if (counter > 1)
+				{
+					pointer = ((pointer + 1) & (STACK_SIZE - 1));
+					counter--;
+				}
+			}
+				
+			/* Clear the actual command and screen. */
+			while (size < length)
+				putchar('\b'), size++;
+				
+			/* Restore last command. */
+			size = length - strlen(stack[pointer]);
+			p = line + strlen(stack[pointer]) + 1;
+			strcpy(line, stack[pointer]);
+			printf("%s", stack[pointer]);
+		}
+
+		/* Keys */
+		else
+		{
+			/* Check for line overflow. */
+			if (size == 1)
+			{
+				*p++ = '\0';
+				break;
+			}
+			
+			/* End of line. */
+			if (ch == EOL_CHAR(raw))
+			{
+				*p++ = '\0';
+				
+				/* Add command to stack. */
+				if (has_graph(line))
+				{
+					stackp = ((stackp + 1) & (STACK_SIZE - 1));
+					stack_count++;
+					strcpy(stack[stackp], line);
+				}
+
+				size--;
+				putchar('\n');
+				break;
+			}
+			
+			/* Printable character. */
+			if (isprint(ch))
+			{
+				*p++ = ch;
+				size--;
+				putchar(ch);
+			}
+		}
+	}
 	
 	return (1);
 }
@@ -632,7 +833,13 @@ int main(int argc, char **argv)
 	/* Print copyright message. */
 	if (shflags & SH_INTERACTIVE)
 		puts(SH_COPYRIGHT);
-	
+
+	/* Configure tty to work in raw mode. */
+	configure_tty();
+
+	/* Initialize command stack. */
+	initialize_stack();
+
 	/* Read and interpret commands. */
 	while (1)
 	{
@@ -655,12 +862,15 @@ int main(int argc, char **argv)
 			
 			/* Parse command line. */
 			case 1:
+				switch_canonical();
 				pline(line);
+				switch_raw();
 				break;
 		}
 	}
 	
 out:
 
+	switch_canonical();
 	return (shret);
 }

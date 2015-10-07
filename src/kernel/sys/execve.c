@@ -1,7 +1,21 @@
 /*
- * Copyright(C) 2011-2014 Pedro H. Penna <pedrohenriquepenna@gmail.com>
- * 
- * sys/execve.c - execve() system call implementation.
+ * Copyright(C) 2011-2015 Pedro H. Penna   <pedrohenriquepenna@gmail.com>
+ *              2015-2015 Davidson Francis <davidsondfgl@hotmail.com>
+ *
+ * This file is part of Nanvix.
+ *
+ * Nanvix is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Nanvix is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Nanvix. If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <nanvix/const.h>
@@ -292,6 +306,28 @@ PRIVATE addr_t buildargs
 	return (p);
 }
 
+/**
+ * @brief Gets binary name.
+ * 
+ * @details Parses @p pathname and extracts the binary name from there.
+ * 
+ * @returns A pointer to the binary name.
+ */
+PRIVATE const char *get_binary_name(const char *pathname)
+{
+	const char *binname;
+	
+	/* Extract binary name. */
+	binname = pathname;
+	for (const char *p = pathname; *p != '\0'; p++)
+	{
+		if (*p == '/')
+			binname = p + 1;
+	}
+	
+	return (binname);
+}
+
 /*
  * Executes a program.
  */
@@ -302,32 +338,32 @@ PUBLIC int sys_execve(const char *filename, const char **argv, const char **envp
 	struct region *reg;   /* Process region.      */
 	addr_t entry;         /* Program entry point. */
 	addr_t sp;            /* User stack pointer.  */
-	char *name;           /* File name.           */
+	char *pathname;       /* Path name.           */
 	char stack[ARG_MAX];  /* Stack size.          */
 
-	/* Get file name. */
-	if ((name = getname(filename)) == NULL)
+	/* Get path name. */
+	if ((pathname = getname(filename)) == NULL)
 		return (curr_proc->errno);
 
 	/* Build arguments before freeing user memory. */
 	kmemset(stack, 0, ARG_MAX);
 	if (!(sp = buildargs(stack, ARG_MAX, argv, envp)))
 	{
-		putname(name);
+		putname(pathname);
 		return (curr_proc->errno);
 	}
 
 	/* Get file's inode. */
-	if ((inode = inode_name(name)) == NULL)
+	if ((inode = inode_name(pathname)) == NULL)
 	{
-		putname(name);
+		putname(pathname);
 		return (curr_proc->errno);
 	}
 
 	/* Not a regular file. */
 	if (!S_ISREG(inode->mode))
 	{
-		putname(name);
+		putname(pathname);
 		inode_put(inode);
 		return (-EACCES);
 	}
@@ -335,7 +371,7 @@ PUBLIC int sys_execve(const char *filename, const char **argv, const char **envp
 	/* Not allowed. */
 	if (!permission(inode->mode, inode->uid, inode->gid, curr_proc, MAY_EXEC, 0))
 	{
-		putname(name);
+		putname(pathname);
 		inode_put(inode);
 		return (-EACCES);
 	}
@@ -379,9 +415,12 @@ PUBLIC int sys_execve(const char *filename, const char **argv, const char **envp
 	if (attachreg(curr_proc, HEAP(curr_proc), UHEAP_ADDR, reg))
 		goto die1;
 	unlockreg(reg);
+
+	/* Assign binary name to the process name. */
+	kstrncpy(curr_proc->name, get_binary_name(pathname), NAME_MAX);
 	
 	inode_put(inode);
-	putname(name);
+	putname(pathname);
 
 	kmemcpy((void *)(USTACK_ADDR - ARG_MAX), stack, ARG_MAX);
 	
@@ -395,7 +434,7 @@ die1:
 	freereg(reg);
 die0:
 	inode_put(inode);
-	putname(name);
+	putname(pathname);
 	die(((SIGSEGV & 0xff) << 16) | (1 << 9));
 	return (-1);
 }

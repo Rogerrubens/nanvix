@@ -20,6 +20,7 @@
 #include <i386/i386.h>
 #include <nanvix/const.h>
 #include <nanvix/hal.h>
+#include <nanvix/pm.h>
 #include <stdint.h>
 
 /*============================================================================*
@@ -71,30 +72,19 @@ PRIVATE const uint16_t int_masks[6] = {
 	0x0000  /* Level 5: all hardware interrupts enabled.  */
 };
 
-/*
- * Interrupt stack level.
- */
-PRIVATE struct
-{
-	unsigned data[6]; /* Data.          */
-	unsigned ptr;     /* Stack pointer. */
-} stack = {
-	{ 5, 5, 5, 5, 5, 5 },
-	0
-};
-
 /**
  * @brief Raises processor execution level.
  * 
- * @param lvl Level to raise processor.
- * 
  * @note This function must be called in an interrupt-safe environment.
  */
-PUBLIC void processor_raise(unsigned lvl)
+PUBLIC unsigned processor_raise(unsigned irqlvl)
 {
-	stack.data[++stack.ptr] = lvl;
-
-	pic_mask(int_masks[lvl]);
+	unsigned old_irqlvl;
+	
+	old_irqlvl = curr_proc->irqlvl;
+	pic_mask(int_masks[curr_proc->irqlvl = irqlvl]);
+	
+	return (old_irqlvl);
 }
 
 /**
@@ -102,11 +92,17 @@ PUBLIC void processor_raise(unsigned lvl)
  * 
  * @note This function must be called in an interrupt-safe environment.
  */
-PUBLIC void processor_drop(void)
+PUBLIC void processor_drop(unsigned irqlvl)
 {
-	unsigned lvl;
+	pic_mask(int_masks[curr_proc->irqlvl = irqlvl]);
+}
 
-	lvl = stack.data[--stack.ptr];
-
-	pic_mask(int_masks[lvl]);
+/**
+ * @brief Reloads the processor execution level.
+ * 
+ * @note This function must be called in an interrupt-safe environment.
+ */
+PUBLIC void processor_reload(void)
+{
+	pic_mask(int_masks[curr_proc->irqlvl]);
 }
