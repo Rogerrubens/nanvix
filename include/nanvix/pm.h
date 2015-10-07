@@ -88,6 +88,8 @@
 	#define PRIO_TTY           0 /**< Waiting for terminal I/O.    */
 	#define PRIO_SIG          20 /**< Waiting for signal.          */
 	#define PRIO_USER         40 /**< User priority.               */
+	#define PRIO_SEM 		 -10 /**< Waiting for semaforo         */
+	#define PRIO_WAK          10 /**< Waiting for wakup            */
 	/**@}*/
 
 	/**
