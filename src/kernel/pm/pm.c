@@ -30,6 +30,7 @@
 #include <sys/stat.h>
 #include <signal.h>
 #include <limits.h>
+#include <sys/sem.h>
 
 /**
  * @brief Idle process page directory.
@@ -120,6 +121,12 @@ PUBLIC void pm_init(void)
 	IDLE->alarm = 0;
 	IDLE->next = NULL;
 	IDLE->chain = NULL;
+	
+	for(int i = 0; i < MAX_TAM; i++){                        
+		for(int j = 0; j < PROC_MAX; j++){           
+			table[i].pids[j] = -1;
+		}
+	}	
 	
 	nprocs++;
 	

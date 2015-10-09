@@ -24,6 +24,8 @@
  * @brief Process management system
  */
 
+
+
 #ifndef NANVIX_PM_H_
 #define NANVIX_PM_H_
 
@@ -35,7 +37,6 @@
 	#include <sys/types.h>
 	#include <limits.h>
 	#include <signal.h>
-	
 	/**
 	 * @name Superuser credentials
 	 */
@@ -58,6 +59,7 @@
 	/**@{*/
 	#define FIRST_PROC ((&proctab[1]))           /**< First process. */
 	#define LAST_PROC ((&proctab[PROC_MAX - 1])) /**< Last process.  */
+	#define MAX_TAM 1000
 	/**@}*/
 	
 	/**
@@ -205,6 +207,17 @@
 		/**@}*/
 	};
 	
+	struct semaforo {
+		unsigned key;
+		int val;
+		int count;
+		struct process * chain;
+		pid_t pids[PROC_MAX];
+		int used;
+	};
+	
+	EXTERN void destruct(int);
+	
 	/* Forward definitions. */
 	EXTERN void bury(struct process *);
 	EXTERN void die(int);
@@ -277,6 +290,8 @@
 	EXTERN struct process *last_proc;
 	EXTERN pid_t next_pid;
 	EXTERN unsigned nprocs;
+	
+	EXTERN struct semaforo table[MAX_TAM];
 
 #endif /* _ASM_FILE */
 

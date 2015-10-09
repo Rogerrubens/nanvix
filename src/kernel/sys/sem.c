@@ -1,19 +1,13 @@
-struct semaforo {
-		unsigned key;
-		int val;
-		int count;
-		struct process * chain;
-		pid_t pids[];
-		int used;
-}
+#include <nanvix/pm.h>
+#include <sys/sem.h>
 
-struct semaforo table[1000];
+struct semaforo table[MAX_TAM];
 
-public int semget(unsigned key){
+int sys_semget(unsigned key){
 	
 	//procurar key na tabela
-	for(int i = 0; i < 1000; i++){
-		if(table[i].key == key){
+	for(int i = 0; i < MAX_TAM; i++){
+		if(table[i].key == key && table[i].used == 1){
 			table[i].count++;
 			return i;
 		}
@@ -21,35 +15,60 @@ public int semget(unsigned key){
 	
 	// caso nao encontre a key, criar um novo 
 	// semaforo na primeira posicao vazia da tabela
-	for(int i = 0; i < 1000; i++){
+	for(int i = 0; i < MAX_TAM; i++){
 		if(table[i].used ==  0){
 			table[i].key = key;
 			table[i].val = 0;
 			table[i].count = 1;
 			table[i].chain = NULL;
 			table[i].used = 1;
+			for(int j = 0; j < PROC_MAX; j++){
+				if(table[j].pids[i] == -1){
+					table[j].pids[i] = curr_proc->pid;
+					break;
+				}
+			}
 			return i;
 		}
 	}
+	
+	// incluir id do processo corrente no vetor de processos do semáforo	
+	
+	
 	return -1;
 }
 
-public int semctl(int id, int cmd, int val){
-	if(id >= 0 && id < 1000){
-		if(cmd == 0){  			
+/*
+ * Destruir semáforo
+ */ 
+void destruct(int id){
+	table[id].used = 0;
+	table[id].key = 0;
+	
+	
+}
+
+int sys_semctl(int id, int cmd, int val){
+	if(id >= 0 && id < MAX_TAM){
+		if(cmd == GETVAL){  			
 			return table[id].val;
 		}
-		else if(cmd == 1 && val >= 0){
+		else if(cmd == SETVAL && val >= 0){
 			table[id].val = val;
 			return 0;
 		}
-		else if(cmd == 3){  	
+		else if(cmd == IPC_RMID){  	
 			if(table[id].count == 1){
-				table[id].used = 0;
-				table[id].key = 0;
+				destruct(id);
+				// deletar id do processo corrente no vetor de processos do semáforo	
+				for(int i = 0; i < PROC_MAX; i++){
+					if(table[id].pids[i] == curr_proc->pid){
+						table[id].pids[i] = -1;
+						break;
+					}
+				}		
 			}
 			else{
-				
 				table[id].count--;
 			}
 			return 0;
@@ -58,21 +77,21 @@ public int semctl(int id, int cmd, int val){
 	return -1;
 }
 
-public int semop(int id, int op){
+int sys_semop(int id, int op){
 	// testar se id é válido
-	if(id >= 0 && id < 1000){
+	if(id >= 0 && id < MAX_TAM){
 		// chamada para Down
 		if(op < 0){		
 			// dormir os processos enquanto 
 			while(table[id].val == 0){		
-				sleep(table[id].chain, PRIO_SEM);
+				sleep(&table[id].chain, PRIO_SEM);
 			}		
 			table[id].val--;
 			return 0;
 		}
 		// chamada para UP
 		else if(op > 0){
-			wakeup(table[id].chain);
+			wakeup(&table[id].chain);
 			table[id].val++;	
 			return 0;
 		}

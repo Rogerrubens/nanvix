@@ -24,6 +24,7 @@
 #include <nanvix/mm.h>
 #include <nanvix/pm.h>
 #include <signal.h>
+#include <sys/sem.h>
 
 /**
  * @brief Is the system shutting down?
@@ -36,7 +37,7 @@ PUBLIC int shutting_down = 0;
  * @param status Exit status.
  */
 PUBLIC void die(int status)
-{
+{	
 	struct process *p;
 	
 	/* Shall not occour. */
@@ -55,6 +56,27 @@ PUBLIC void die(int status)
 	/* Close file descriptors. */
 	for (unsigned i = 0; i < OPEN_MAX; i++)
 		do_close(i);
+	
+	
+	// deletar id do processo corrente no vetor de processos do semáforo
+		
+	// para cada entrada na tabela
+	for(int i = 0; i < MAX_TAM; i++){               
+		// se entrada estiver em uso        
+		if(table[i].used == 1){              
+			// se o processo corrente usa ele            
+			for(int j = 0; j < PROC_MAX; j++){           
+				if(table[i].pids[j] == curr_proc->pid){      
+					table[i].count--;                // decrementa count
+					if(table[i].count == 0){         // se count = 0
+						destruct(i);				 // destroi semaforo
+					}
+					break;
+				}
+			}
+		}
+	}	
+		
 	
 	/* Hangup terminal. */
 	if (IS_LEADER(curr_proc) && (curr_proc->tty != NULL_DEV))
