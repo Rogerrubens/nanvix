@@ -294,28 +294,48 @@ PRIVATE int allocf(void)
 {
 	int i;      /* Loop index.  */
 	int oldest; /* Oldest page. */
+	int flag = 1;
 	
 	#define OLDEST(x, y) (frames[x].age < frames[y].age)
-	
+	again:
 	/* Search for a free frame. */
 	oldest = -1;
 	for (i = 0; i < NR_FRAMES; i++)
 	{
-		/* Found it. */
+		/* Se não tiver processos referenciando o quadro */
 		if (frames[i].count == 0)
 			goto found;
 		
-		/* Local page replacement policy. */
+		/* Se dono do frame for processo atual */
 		if (frames[i].owner == curr_proc->pid)
 		{
-			/* Skip shared pages. */
+			/* Se frame estiver com mais de um processo */
 			if (frames[i].count > 1)
 				continue;
 			
-			/* Oldest page found. */
-			if ((oldest < 0) || (OLDEST(i, oldest)))
-				oldest = i;
+			// Se frame não estiver sito acessado recentemente
+			if(getpte(curr_proc, frames[i].addr)->accessed == 0){
+				/* Se frame for o mais velho */
+				if (oldest < 0){
+					oldest = i;
+					continue;
+				}
+				
+				// Se frame atual for mais velho que oldest 
+				if(OLDEST(i, oldest)){
+					oldest = i;
+				}
+			}
+			else{
+				getpte(curr_proc, frames[i].addr)->accessed = 0;
+			}
+			
 		}
+	}
+	
+	if(flag){
+		flag--;
+		goto again;
 	}
 	
 	/* No frame left. */
