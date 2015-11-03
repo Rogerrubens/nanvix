@@ -18,6 +18,20 @@
 #
 
 #
+# Script parameters.
+#   $1 Educational kernel?
+#
+EDUCATIONAL_KERNEL=$1
+
+# Root credentials.
+ROOTUID=0
+ROOTGID=0
+
+# User credentials.
+NOOBUID=1
+NOOBUID=1
+
+#
 # Inserts disk in a loop device.
 #   $1 Disk image name.
 #
@@ -34,6 +48,27 @@ function eject {
 	losetup -d /dev/loop2
 }
 
+# Generate passwords file
+#   $1 Disk image name.
+#
+function passwords
+{
+	file="passwords"
+	
+	bin/useradd $file root root $ROOTGID $ROOTUID
+	bin/useradd $file noob noob $NOOBUID $NOOBUID
+
+	# Let's care about security...
+	if [ "$EDUCATIONAL_KERNEL" == "0" ]; then
+		chmod 600 $file
+	fi
+	
+	bin/cp.minix $1 $file /etc/$file $ROOTUID $ROOTGID
+	
+	# House keeping.
+	rm -f $file
+}
+
 #
 # Formats a disk.
 #   $1 Disk image name.
@@ -41,31 +76,42 @@ function eject {
 #   $3 Number of inodes.
 #
 function format {
-	bin/mkfs.minix $1 $2 $3
-	bin/mkdir.minix $1 /sbin
-	bin/mkdir.minix $1 /bin
-	bin/mkdir.minix $1 /home
-	bin/mkdir.minix $1 /dev
-	bin/mknod.minix $1 /dev/null 666 c 0 0
-	bin/mknod.minix $1 /dev/tty 666 c 0 1
-	bin/mknod.minix $1 /dev/ramdisk 666 b 0 0
-	bin/mknod.minix $1 /dev/hdd 666 b 0 1
+	bin/mkfs.minix $1 $2 $3 $ROOTUID $ROOTGID
+	bin/mkdir.minix $1 /etc $ROOTUID $ROOTGID
+	bin/mkdir.minix $1 /sbin $ROOTUID $ROOTGID
+	bin/mkdir.minix $1 /bin $ROOTUID $ROOTGID
+	bin/mkdir.minix $1 /home $ROOTUID $ROOTGID
+	bin/mkdir.minix $1 /dev $ROOTUID $ROOTGID
+	bin/mknod.minix $1 /dev/null 666 c 0 0 $ROOTUID $ROOTGID
+	bin/mknod.minix $1 /dev/tty 666 c 0 1 $ROOTUID $ROOTGID
+	bin/mknod.minix $1 /dev/ramdisk 666 b 0 0 $ROOTUID $ROOTGID
+	bin/mknod.minix $1 /dev/hdd 666 b 0 1 $ROOTUID $ROOTGID
 }
 
 #
 # Copy files to a disk image.
 #   $1 Target disk image.
 #
-function copy_files {
+function copy_files
+{
+	chmod 666 tools/img/inittab
+	
+	# Let's care for security...
+	if [ "$EDUCATIONAL_KERNEL" == "0" ]; then
+		chmod 600 tools/img/inittab
+	fi
+	bin/cp.minix $1 tools/img/inittab /etc/inittab $ROOTUID $ROOTGID
+	
+	passwords $1
 	
 	for file in bin/sbin/*; do
 		filename=`basename $file`
-		bin/cp.minix $1 $file /sbin/$filename
+		bin/cp.minix $1 $file /sbin/$filename $ROOTUID $ROOTGID
 	done
 	
 	for file in bin/ubin/*; do
 		filename=`basename $file`
-		bin/cp.minix $1 $file /bin/$filename
+		bin/cp.minix $1 $file /bin/$filename $ROOTUID $ROOTGID
 	done
 }
 

@@ -19,10 +19,9 @@ char *fgets(char *str, int n, FILE *stream)
 	/* Read string. */
 	while ((--n > 0) && ((c = getc(stream)) != EOF))
 	{
-		*p++ = c;
-		
 		if (c == '\n')
 			break;
+		*p++ = c;
 	}
 	
 	if ((c == EOF) && (p == str))
